@@ -339,6 +339,12 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 .view-header { margin-bottom: var(--space-8); }
 .view-header h1 { font-size: var(--text-xl); font-weight: 700; color: var(--color-text); letter-spacing: -0.02em; }
+.view-header h1.editable-title { cursor: pointer; border-bottom: 2px dashed transparent; transition: border-color 0.2s; display: inline-flex; align-items: center; gap: 8px; }
+.view-header h1.editable-title:hover { border-bottom-color: var(--color-primary); }
+.view-header h1.editable-title .edit-icon { opacity: 0; transition: opacity 0.2s; width: 18px; height: 18px; flex-shrink: 0; }
+.view-header h1.editable-title:hover .edit-icon { opacity: 0.5; }
+.view-header h1.editable-title .title-text { outline: none; }
+.view-header h1.editable-title .title-text[contenteditable="true"] { border-bottom: 2px solid var(--color-primary); padding-bottom: 2px; }
 .view-subtitle { font-size: var(--text-sm); color: var(--color-text-muted); margin-top: var(--space-1); }
 
 /* ===== KPI CARDS ===== */
@@ -892,7 +898,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
       <!-- DASHBOARD VIEW -->
       <section class="view active" id="view-dashboard">
         <div class="view-header">
-          <h1>Dashboard</h1>
+          <h1 class="editable-title" data-title-key="dashboard-title"><span class="title-text">Dashboard</span><svg class="edit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></h1>
           <p class="view-subtitle">New CEO onboarding progress at a glance</p>
         </div>
         <div class="kpi-grid" id="kpi-grid"></div>
@@ -919,7 +925,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
       <!-- CHECKLIST VIEW -->
       <section class="view" id="view-checklist">
         <div class="view-header">
-          <h1>Onboarding Checklist</h1>
+          <h1 class="editable-title" data-title-key="checklist-title"><span class="title-text">Onboarding Checklist</span><svg class="edit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></h1>
           <p class="view-subtitle">Click any row to edit dates, attendees, documents, and status</p>
         </div>
         <div class="add-task-bar">
@@ -957,7 +963,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
       <!-- GANTT VIEW -->
       <section class="view" id="view-gantt">
         <div class="view-header">
-          <h1>Gantt Chart</h1>
+          <h1 class="editable-title" data-title-key="gantt-title"><span class="title-text">Gantt Chart</span><svg class="edit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></h1>
           <p class="view-subtitle">Visual timeline &#8212; set dates in the Checklist to see tasks here</p>
         </div>
         <div class="gantt-controls">
@@ -1141,6 +1147,7 @@ function init() {
   setupAddModal();
   setupConfirmDelete();
   setupNotes();
+  setupEditableTitles();
   renderAll();
 }
 
@@ -1296,6 +1303,55 @@ function setupNotes() {
   if (saved) field.value = saved;
   field.addEventListener('input', () => {
     store.set('theialife-notes', field.value);
+  });
+}
+
+// ===== EDITABLE TITLES =====
+function setupEditableTitles() {
+  document.querySelectorAll('.editable-title').forEach(h1 => {
+    const titleSpan = h1.querySelector('.title-text');
+    const key = h1.dataset.titleKey;
+    // Restore saved title
+    const saved = store.get(key);
+    if (saved) titleSpan.textContent = saved;
+
+    h1.addEventListener('click', (e) => {
+      if (titleSpan.contentEditable === 'true') return;
+      titleSpan.contentEditable = 'true';
+      titleSpan.focus();
+      // Select all text
+      const range = document.createRange();
+      range.selectNodeContents(titleSpan);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+
+    function finishEdit() {
+      titleSpan.contentEditable = 'false';
+      const text = titleSpan.textContent.trim();
+      if (text) {
+        store.set(key, text);
+      } else {
+        // Revert to saved or default
+        const fallback = store.get(key) || titleSpan.textContent;
+        titleSpan.textContent = fallback;
+      }
+    }
+
+    titleSpan.addEventListener('blur', finishEdit);
+    titleSpan.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        titleSpan.blur();
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        const saved = store.get(key);
+        if (saved) titleSpan.textContent = saved;
+        titleSpan.contentEditable = 'false';
+      }
+    });
   });
 }
 
