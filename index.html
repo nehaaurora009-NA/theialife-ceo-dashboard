@@ -513,7 +513,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 .checklist-table {
   font-size: var(--text-sm);
-  min-width: 900px;
+  min-width: 1010px;
 }
 .checklist-table thead {
   position: sticky;
@@ -603,6 +603,62 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 .docs-partial { background: var(--color-warning-light); color: var(--color-warning); }
 .docs-no { background: var(--color-error-light); color: var(--color-error); }
 .docs-na { background: var(--color-surface-offset, var(--color-surface-2)); color: var(--color-text-faint); }
+
+/* ===== ACTION BUTTONS (move/delete) ===== */
+.col-actions { width: 110px; text-align: center; white-space: nowrap; }
+.row-actions { display: flex; align-items: center; justify-content: center; gap: 2px; }
+.row-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  color: var(--color-text-faint);
+  transition: background var(--transition-interactive), color var(--transition-interactive);
+  padding: 0;
+  flex-shrink: 0;
+}
+.row-action-btn:hover { background: var(--color-surface-offset); color: var(--color-text); }
+.row-action-btn.btn-delete:hover { background: var(--color-error-light); color: var(--color-error); }
+.row-action-btn:disabled { opacity: 0.25; pointer-events: none; }
+
+.add-task-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.btn-add-task {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  background: var(--color-primary);
+  color: #fff;
+  border: 1px solid var(--color-primary);
+  transition: background var(--transition-interactive);
+}
+.btn-add-task:hover { background: var(--color-primary-hover); }
+.btn-add-task svg { flex-shrink: 0; }
+
+/* Confirm delete overlay */
+.confirm-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 300;
+  display: none; align-items: center; justify-content: center; padding: var(--space-4);
+}
+.confirm-overlay.open { display: flex; }
+.confirm-box {
+  background: var(--color-surface); border-radius: var(--radius-xl); padding: var(--space-6);
+  max-width: 380px; width: 100%; box-shadow: var(--shadow-lg); text-align: center;
+  animation: modalIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.confirm-box h3 { font-size: var(--text-lg); font-weight: 600; margin-bottom: var(--space-2); }
+.confirm-box p { font-size: var(--text-sm); color: var(--color-text-muted); margin-bottom: var(--space-6); }
+.confirm-actions { display: flex; gap: var(--space-3); justify-content: center; }
 
 /* ===== GANTT ===== */
 .gantt-controls {
@@ -866,6 +922,12 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
           <h1>Onboarding Checklist</h1>
           <p class="view-subtitle">Click any row to edit dates, attendees, documents, and status</p>
         </div>
+        <div class="add-task-bar">
+          <button class="btn-add-task" id="btn-add-task">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Task
+          </button>
+        </div>
         <div class="filters">
           <button class="filter-btn active" data-filter="all">All</button>
           <button class="filter-btn" data-filter="not-started">Not Started</button>
@@ -884,6 +946,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
                 <th class="col-start">Start Date</th>
                 <th class="col-end">Target Date</th>
                 <th class="col-docs">Docs Ready</th>
+                <th class="col-actions">Actions</th>
               </tr>
             </thead>
             <tbody id="checklist-body"></tbody>
@@ -965,6 +1028,56 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
     </div>
   </div>
 
+  <!-- Confirm Delete -->
+  <div class="confirm-overlay" id="confirm-overlay">
+    <div class="confirm-box">
+      <h3>Delete Task</h3>
+      <p id="confirm-text">Are you sure you want to remove this task?</p>
+      <div class="confirm-actions">
+        <button class="btn btn-secondary" id="confirm-cancel">Cancel</button>
+        <button class="btn btn-primary" style="background:var(--color-error);border-color:var(--color-error)" id="confirm-delete">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Task Modal -->
+  <div class="modal-overlay" id="add-modal-overlay">
+    <div class="modal" role="dialog" aria-label="Add task">
+      <div class="modal-header">
+        <h2>Add New Task</h2>
+        <button class="modal-close" id="add-modal-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <label>Task Name</label>
+          <input type="text" id="add-task-name" placeholder="e.g. Board Meeting Prep">
+        </div>
+        <div class="form-row">
+          <label>Description</label>
+          <input type="text" id="add-task-sub" placeholder="Brief description of the session">
+        </div>
+        <div class="form-row">
+          <label>Category</label>
+          <select id="add-task-category">
+            <option value="Onboarding">Onboarding</option>
+            <option value="Finance">Finance</option>
+            <option value="Clinical">Clinical</option>
+            <option value="Commercial">Commercial</option>
+            <option value="Strategy">Strategy</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Presenters / Attendees</label>
+          <input type="text" id="add-task-owner" placeholder="e.g. Neha, Susan">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="add-modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="add-modal-save">Add Task</button>
+      </div>
+    </div>
+  </div>
+
   <footer class="app-footer">
     <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">Created with Perplexity Computer</a>
   </footer>
@@ -977,31 +1090,27 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 const CATEGORIES = {
   'Onboarding':    'cat-onboarding',
-  'IP':            'cat-ip',
   'Finance':       'cat-finance',
   'Clinical':      'cat-clinical',
-  'Manufacturing': 'cat-manufacturing',
   'Commercial':    'cat-commercial',
   'Strategy':      'cat-strategy',
 };
 
 const DEFAULT_TASKS = [
   { id: 1, category: 'Onboarding', task: 'Intro to Bioplus Team', sub: 'Who does what function at Bioplus; key POC introductions', owner: '', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Bioplus org chart, team roles & responsibilities document', notes: '' },
-  { id: 2, category: 'IP', task: 'Patent Portfolio Walkthrough', sub: 'Overview of all patents filed & planned (high-level, no details)', owner: '', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Patent summary table, filing timeline overview', notes: '' },
-  { id: 3, category: 'Finance', task: 'Funding Strategy & Financial Model', sub: 'Latest model walkthrough, current cap table, planned dilution', owner: '', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Financial model, cap table, dilution scenario analysis', notes: '' },
-  { id: 4, category: 'Clinical', task: 'Teach-In: Real World Evidence (RWE)', sub: 'Deep dive into RWE mechanics & statistics with Dr. Klaus', owner: 'Klaus, Dwight, Patricia', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'RWE data package, statistical methodology overview, key publications', notes: '' },
-  { id: 5, category: 'Clinical', task: 'Teach-In: Pre-clinical, Clinical & PH3 Design', sub: 'Pre-clinical data, clinical data, PH3 design, readiness & correlation of ongoing studies', owner: '', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Pre-clinical data summary, clinical data package, PH3 protocol synopsis, ongoing study status report', notes: '' },
-  { id: 6, category: 'Manufacturing', task: 'Teach-In: 7MX Manufacturing & R&D', sub: "Overview per Sundeep's guidance on scope; Subbu to share detailed plan", owner: 'Sundeep, Subbu', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Manufacturing overview deck (curated), R&D summary, detailed plan from Subbu', notes: 'Sundeep to advise exact details of what to share & what to omit' },
-  { id: 7, category: 'Strategy', task: 'Partnering Deep Dive', sub: 'Review all partnering conversations (past, planned, target outreach)', owner: 'Neha, Susan', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Partnering tracker, target list, outreach plan, conversation summaries', notes: '' },
-  { id: 8, category: 'Finance', task: 'Investors & Bankers Deep Dive', sub: 'Review all investor/banker conversations (past, planned, outreach plan)', owner: 'Neha, BMC', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Investor tracker, banker engagement summary, outreach/target plan', notes: '' },
-  { id: 9, category: 'Commercial', task: 'Commercialisation Strategy (Syneos)', sub: 'Understanding the commercialisation strategy with Neha', owner: 'Neha', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Syneos commercialisation strategy deck, market analysis', notes: '' },
-  { id: 10, category: 'Commercial', task: 'USA Commercialisation Deep Dive', sub: 'Deep dive into USA go-to-market with Susan & Tilak', owner: 'Susan, Tilak', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'USA market model, go-to-market plan, competitive landscape summary', notes: '' },
-  { id: 11, category: 'Strategy', task: 'Media Outreach & Announcement Planning', sub: 'Conferences, attendance/presentation strategy & participation plan for the year', owner: 'Neha, Susan', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Conference calendar, PR/media plan, announcement timeline, presentation materials', notes: '' },
-  { id: 12, category: 'Strategy', task: 'Theialife Deck Review & Update', sub: 'Review and update the corporate deck; ensure CEO is comfortable presenting', owner: 'BMC, Neha', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Current Theialife corporate deck, updated narratives/data', notes: '' },
-  { id: 13, category: 'Strategy', task: 'Data Room Build & Review', sub: 'Review existing data room and build out by segment', owner: 'Neha', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Data room index, segment-wise document checklist, access controls plan', notes: '' },
-  { id: 14, category: 'Onboarding', task: 'Regulatory Strategy Overview', sub: 'FDA/EMA pathway review, IND submission timeline, regulatory milestones', owner: '', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Regulatory strategy document, IND timeline, agency interaction history', notes: '' },
-  { id: 15, category: 'Onboarding', task: 'Corporate Governance & Legal Overview', sub: 'Board structure, key agreements, corporate bylaws, D&O coverage', owner: '', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Corporate governance docs, board charter, key contracts summary', notes: '' },
-  { id: 16, category: 'Onboarding', task: 'Competitive Landscape Briefing', sub: 'Key competitors, differentiation, market positioning for ND10 in pediatric myopia', owner: '', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Competitive landscape analysis, positioning deck', notes: '' },
+  { id: 2, category: 'Finance', task: 'Funding Strategy & Financial Model', sub: 'Latest model walkthrough, current cap table, planned dilution', owner: '', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Financial model, cap table, dilution scenario analysis', notes: '' },
+  { id: 3, category: 'Clinical', task: 'Teach-In: Real World Evidence (RWE)', sub: 'Deep dive into RWE mechanics & statistics with Dr. Klaus', owner: 'Klaus, Dwight, Patricia', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'RWE data package, statistical methodology overview, key publications', notes: '' },
+  { id: 4, category: 'Clinical', task: 'Teach-In: Pre-clinical, Clinical & PH3 Design', sub: 'Pre-clinical data, clinical data, PH3 design, readiness & correlation of ongoing studies', owner: '', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Pre-clinical data summary, clinical data package, PH3 protocol synopsis, ongoing study status report', notes: '' },
+  { id: 5, category: 'Strategy', task: 'Partnering Deep Dive', sub: 'Review all partnering conversations (past, planned, target outreach)', owner: 'Neha, Susan', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Partnering tracker, target list, outreach plan, conversation summaries', notes: '' },
+  { id: 6, category: 'Finance', task: 'Investors & Bankers Deep Dive', sub: 'Review all investor/banker conversations (past, planned, outreach plan)', owner: 'Neha, BMC', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Investor tracker, banker engagement summary, outreach/target plan', notes: '' },
+  { id: 7, category: 'Commercial', task: 'Commercialisation Strategy (Syneos)', sub: 'Understanding the commercialisation strategy with Neha', owner: 'Neha', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Syneos commercialisation strategy deck, market analysis', notes: '' },
+  { id: 8, category: 'Commercial', task: 'USA Commercialisation Deep Dive', sub: 'Deep dive into USA go-to-market with Susan & Tilak', owner: 'Susan, Tilak', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'USA market model, go-to-market plan, competitive landscape summary', notes: '' },
+  { id: 9, category: 'Strategy', task: 'Media Outreach & Announcement Planning', sub: 'Conferences, attendance/presentation strategy & participation plan for the year', owner: 'Neha, Susan', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Conference calendar, PR/media plan, announcement timeline, presentation materials', notes: '' },
+  { id: 10, category: 'Strategy', task: 'Theialife Deck Review & Update', sub: 'Review and update the corporate deck; ensure CEO is comfortable presenting', owner: 'BMC, Neha', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Current Theialife corporate deck, updated narratives/data', notes: '' },
+  { id: 11, category: 'Strategy', task: 'Data Room Build & Review', sub: 'Review existing data room and build out by segment', owner: 'Neha', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Data room index, segment-wise document checklist, access controls plan', notes: '' },
+  { id: 12, category: 'Onboarding', task: 'Regulatory Strategy Overview', sub: 'FDA/EMA pathway review, IND submission timeline, regulatory milestones', owner: '', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Regulatory strategy document, IND timeline, agency interaction history', notes: '' },
+  { id: 13, category: 'Onboarding', task: 'Corporate Governance & Legal Overview', sub: 'Board structure, key agreements, corporate bylaws, D&O coverage', owner: '', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Corporate governance docs, board charter, key contracts summary', notes: '' },
+  { id: 14, category: 'Onboarding', task: 'Competitive Landscape Briefing', sub: 'Key competitors, differentiation, market positioning for ND10 in pediatric myopia', owner: '', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Competitive landscape analysis, positioning deck', notes: '' },
 ];
 
 // ===== IN-MEMORY STORE =====
@@ -1019,6 +1128,8 @@ let editingTaskId = null;
 let statusChart = null;
 
 // ===== INIT =====
+let deletingTaskId = null;
+
 function init() {
   loadTasks();
   setupNav();
@@ -1027,6 +1138,8 @@ function init() {
   setupFilters();
   setupGanttZoom();
   setupModal();
+  setupAddModal();
+  setupConfirmDelete();
   setupNotes();
   renderAll();
 }
@@ -1304,7 +1417,7 @@ function renderChecklist() {
   const tbody = document.getElementById('checklist-body');
   const filtered = activeFilter === 'all' ? tasks : tasks.filter(t => t.status === activeFilter);
 
-  tbody.innerHTML = filtered.map(function(t) {
+  tbody.innerHTML = filtered.map(function(t, idx) {
     const catClass = CATEGORIES[t.category] || 'cat-onboarding';
     const startStr = t.startDate
       ? new Date(t.startDate + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -1318,23 +1431,132 @@ function renderChecklist() {
     const docsClass = docsClassMap[t.docsReady] || 'docs-no';
     const docsLabel = docsLabelMap[t.docsReady] || 'Not Yet';
 
+    var isFirst = idx === 0;
+    var isLast = idx === filtered.length - 1;
+    var showReorder = (activeFilter === 'all');
+
     return '<tr data-id="' + t.id + '">' +
       '<td class="col-status"><span class="status-dot ' + t.status + '" title="' + t.status + '"></span></td>' +
-      '<td class="col-id"><span class="task-id">' + t.id + '</span></td>' +
+      '<td class="col-id"><span class="task-id">' + (idx + 1) + '</span></td>' +
       '<td class="col-category"><span class="category-badge ' + catClass + '">' + t.category + '</span></td>' +
       '<td class="col-task"><div class="task-name">' + t.task + '</div><div class="task-sub">' + t.sub + '</div></td>' +
       '<td class="col-owner"><span class="owner-text">' + (t.owner || '\u2014') + '</span></td>' +
       '<td class="col-start">' + (startStr ? '<span class="date-text">' + startStr + '</span>' : '<span class="date-empty">Set date</span>') + '</td>' +
       '<td class="col-end">' + (endStr ? '<span class="date-text">' + endStr + '</span>' : '<span class="date-empty">Set date</span>') + '</td>' +
       '<td class="col-docs"><span class="docs-badge ' + docsClass + '">' + docsLabel + '</span></td>' +
+      '<td class="col-actions"><div class="row-actions">' +
+        (showReorder ? '<button class="row-action-btn btn-up" data-action="up" data-id="' + t.id + '"' + (isFirst ? ' disabled' : '') + ' title="Move up"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 15l-6-6-6 6"/></svg></button>' : '') +
+        (showReorder ? '<button class="row-action-btn btn-down" data-action="down" data-id="' + t.id + '"' + (isLast ? ' disabled' : '') + ' title="Move down"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></button>' : '') +
+        '<button class="row-action-btn btn-delete" data-action="delete" data-id="' + t.id + '" title="Delete task"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>' +
+      '</div></td>' +
       '</tr>';
   }).join('');
 
+  // Attach click handlers for row editing
   tbody.querySelectorAll('tr').forEach(row => {
-    row.addEventListener('click', () => {
+    row.addEventListener('click', (e) => {
+      // Don't open edit modal if clicking action buttons
+      if (e.target.closest('.row-action-btn')) return;
       const id = parseInt(row.dataset.id, 10);
       openModal(id);
     });
+  });
+
+  // Attach action button handlers
+  tbody.querySelectorAll('.row-action-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      var action = btn.dataset.action;
+      var id = parseInt(btn.dataset.id, 10);
+      if (action === 'up') moveTask(id, -1);
+      else if (action === 'down') moveTask(id, 1);
+      else if (action === 'delete') promptDelete(id);
+    });
+  });
+}
+
+// ===== MOVE TASK =====
+function moveTask(id, direction) {
+  var idx = tasks.findIndex(t => t.id === id);
+  if (idx < 0) return;
+  var newIdx = idx + direction;
+  if (newIdx < 0 || newIdx >= tasks.length) return;
+  var tmp = tasks[idx];
+  tasks[idx] = tasks[newIdx];
+  tasks[newIdx] = tmp;
+  renumberTasks();
+  saveTasks();
+  renderAll();
+}
+
+// ===== RENUMBER =====
+function renumberTasks() {
+  tasks.forEach(function(t, i) { t.id = i + 1; });
+}
+
+// ===== DELETE TASK =====
+function promptDelete(id) {
+  deletingTaskId = id;
+  var t = tasks.find(t2 => t2.id === id);
+  document.getElementById('confirm-text').textContent = 'Remove "' + (t ? t.task : '') + '" from the checklist?';
+  document.getElementById('confirm-overlay').classList.add('open');
+}
+
+function setupConfirmDelete() {
+  document.getElementById('confirm-cancel').addEventListener('click', function() {
+    document.getElementById('confirm-overlay').classList.remove('open');
+    deletingTaskId = null;
+  });
+  document.getElementById('confirm-overlay').addEventListener('click', function(e) {
+    if (e.target === this) { this.classList.remove('open'); deletingTaskId = null; }
+  });
+  document.getElementById('confirm-delete').addEventListener('click', function() {
+    if (deletingTaskId !== null) {
+      tasks = tasks.filter(t => t.id !== deletingTaskId);
+      renumberTasks();
+      saveTasks();
+      renderAll();
+    }
+    document.getElementById('confirm-overlay').classList.remove('open');
+    deletingTaskId = null;
+  });
+}
+
+// ===== ADD TASK =====
+function setupAddModal() {
+  var overlay = document.getElementById('add-modal-overlay');
+  document.getElementById('btn-add-task').addEventListener('click', function() {
+    document.getElementById('add-task-name').value = '';
+    document.getElementById('add-task-sub').value = '';
+    document.getElementById('add-task-category').value = 'Onboarding';
+    document.getElementById('add-task-owner').value = '';
+    overlay.classList.add('open');
+  });
+  document.getElementById('add-modal-close').addEventListener('click', function() { overlay.classList.remove('open'); });
+  document.getElementById('add-modal-cancel').addEventListener('click', function() { overlay.classList.remove('open'); });
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.classList.remove('open'); });
+
+  document.getElementById('add-modal-save').addEventListener('click', function() {
+    var name = document.getElementById('add-task-name').value.trim();
+    if (!name) { document.getElementById('add-task-name').focus(); return; }
+    var newId = tasks.length ? Math.max.apply(null, tasks.map(t => t.id)) + 1 : 1;
+    tasks.push({
+      id: newId,
+      category: document.getElementById('add-task-category').value,
+      task: name,
+      sub: document.getElementById('add-task-sub').value.trim(),
+      owner: document.getElementById('add-task-owner').value.trim(),
+      startDate: '',
+      endDate: '',
+      status: 'not-started',
+      docsReady: 'no',
+      docsNeeded: '',
+      notes: ''
+    });
+    renumberTasks();
+    saveTasks();
+    overlay.classList.remove('open');
+    renderAll();
   });
 }
 
