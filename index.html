@@ -611,8 +611,18 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 .docs-na { background: var(--color-surface-offset, var(--color-surface-2)); color: var(--color-text-faint); }
 
 /* ===== ACTION BUTTONS (move/delete) ===== */
-.col-actions { width: 110px; text-align: center; white-space: nowrap; }
+.col-actions { width: 80px; text-align: center; white-space: nowrap; }
 .row-actions { display: flex; align-items: center; justify-content: center; gap: 2px; }
+.drag-handle {
+  cursor: grab; display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 6px; border: none; background: transparent;
+  color: var(--color-text-muted); transition: all 0.15s;
+}
+.drag-handle:hover { background: var(--color-surface-offset); color: var(--color-text); }
+.drag-handle:active { cursor: grabbing; }
+tr.dragging { opacity: 0.4; background: var(--color-primary-light) !important; }
+tr.drag-over-top { box-shadow: inset 0 3px 0 0 var(--color-primary); }
+tr.drag-over-bottom { box-shadow: inset 0 -3px 0 0 var(--color-primary); }
 .row-action-btn {
   display: inline-flex;
   align-items: center;
@@ -990,6 +1000,24 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
       </div>
       <div class="modal-body">
         <div class="form-row">
+          <label>Task Name</label>
+          <input type="text" id="edit-task-name" placeholder="Task name">
+        </div>
+        <div class="form-row">
+          <label>Description</label>
+          <input type="text" id="edit-task-sub" placeholder="Brief description">
+        </div>
+        <div class="form-row">
+          <label>Category</label>
+          <select id="edit-category">
+            <option value="Onboarding">Onboarding</option>
+            <option value="Finance">Finance</option>
+            <option value="Clinical">Clinical</option>
+            <option value="Strategy">Strategy</option>
+            <option value="Commercial">Commercial</option>
+          </select>
+        </div>
+        <div class="form-row">
           <label>Status</label>
           <select id="edit-status">
             <option value="not-started">Not Started</option>
@@ -1119,11 +1147,10 @@ const DEFAULT_TASKS = [
   { id: 14, category: 'Onboarding', task: 'Competitive Landscape Briefing', sub: 'Key competitors, differentiation, market positioning for ND10 in pediatric myopia', owner: '', startDate: '', endDate: '', status: 'not-started', docsReady: 'no', docsNeeded: 'Competitive landscape analysis, positioning deck', notes: '' },
 ];
 
-// ===== IN-MEMORY STORE =====
-const memStore = {};
+// ===== PERSISTENT STORE (localStorage) =====
 const store = {
-  get(key) { return memStore[key] || null; },
-  set(key, val) { memStore[key] = val; }
+  get(key) { try { return localStorage.getItem(key); } catch(e) { return null; } },
+  set(key, val) { try { localStorage.setItem(key, val); } catch(e) {} }
 };
 
 // ===== STATE =====
@@ -1263,6 +1290,10 @@ function setupModal() {
     if (editingTaskId === null) return;
     const t = tasks.find(t2 => t2.id === editingTaskId);
     if (!t) return;
+    const newName = document.getElementById('edit-task-name').value.trim();
+    if (newName) t.task = newName;
+    t.sub = document.getElementById('edit-task-sub').value;
+    t.category = document.getElementById('edit-category').value;
     t.status = document.getElementById('edit-status').value;
     t.startDate = document.getElementById('edit-start').value;
     t.endDate = document.getElementById('edit-end').value;
@@ -1280,7 +1311,10 @@ function openModal(id) {
   editingTaskId = id;
   const t = tasks.find(t2 => t2.id === id);
   if (!t) return;
-  document.getElementById('modal-title').textContent = t.task;
+  document.getElementById('modal-title').textContent = 'Edit Task';
+  document.getElementById('edit-task-name').value = t.task;
+  document.getElementById('edit-task-sub').value = t.sub || '';
+  document.getElementById('edit-category').value = t.category;
   document.getElementById('edit-status').value = t.status;
   document.getElementById('edit-start').value = t.startDate;
   document.getElementById('edit-end').value = t.endDate;
@@ -1487,11 +1521,9 @@ function renderChecklist() {
     const docsClass = docsClassMap[t.docsReady] || 'docs-no';
     const docsLabel = docsLabelMap[t.docsReady] || 'Not Yet';
 
-    var isFirst = idx === 0;
-    var isLast = idx === filtered.length - 1;
     var showReorder = (activeFilter === 'all');
 
-    return '<tr data-id="' + t.id + '">' +
+    return '<tr data-id="' + t.id + '"' + (showReorder ? ' draggable="true"' : '') + '>' +
       '<td class="col-status"><span class="status-dot ' + t.status + '" title="' + t.status + '"></span></td>' +
       '<td class="col-id"><span class="task-id">' + (idx + 1) + '</span></td>' +
       '<td class="col-category"><span class="category-badge ' + catClass + '">' + t.category + '</span></td>' +
@@ -1501,8 +1533,7 @@ function renderChecklist() {
       '<td class="col-end">' + (endStr ? '<span class="date-text">' + endStr + '</span>' : '<span class="date-empty">Set date</span>') + '</td>' +
       '<td class="col-docs"><span class="docs-badge ' + docsClass + '">' + docsLabel + '</span></td>' +
       '<td class="col-actions"><div class="row-actions">' +
-        (showReorder ? '<button class="row-action-btn btn-up" data-action="up" data-id="' + t.id + '"' + (isFirst ? ' disabled' : '') + ' title="Move up"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 15l-6-6-6 6"/></svg></button>' : '') +
-        (showReorder ? '<button class="row-action-btn btn-down" data-action="down" data-id="' + t.id + '"' + (isLast ? ' disabled' : '') + ' title="Move down"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></button>' : '') +
+        (showReorder ? '<span class="drag-handle" title="Drag to reorder"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg></span>' : '') +
         '<button class="row-action-btn btn-delete" data-action="delete" data-id="' + t.id + '" title="Delete task"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>' +
       '</div></td>' +
       '</tr>';
@@ -1511,38 +1542,151 @@ function renderChecklist() {
   // Attach click handlers for row editing
   tbody.querySelectorAll('tr').forEach(row => {
     row.addEventListener('click', (e) => {
-      // Don't open edit modal if clicking action buttons
-      if (e.target.closest('.row-action-btn')) return;
+      if (e.target.closest('.row-action-btn') || e.target.closest('.drag-handle')) return;
       const id = parseInt(row.dataset.id, 10);
       openModal(id);
     });
   });
 
-  // Attach action button handlers
-  tbody.querySelectorAll('.row-action-btn').forEach(btn => {
+  // Attach delete button handlers
+  tbody.querySelectorAll('.btn-delete').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      var action = btn.dataset.action;
-      var id = parseInt(btn.dataset.id, 10);
-      if (action === 'up') moveTask(id, -1);
-      else if (action === 'down') moveTask(id, 1);
-      else if (action === 'delete') promptDelete(id);
+      promptDelete(parseInt(btn.dataset.id, 10));
     });
   });
+
+  // Drag-and-drop reordering
+  setupDragAndDrop(tbody);
 }
 
-// ===== MOVE TASK =====
-function moveTask(id, direction) {
-  var idx = tasks.findIndex(t => t.id === id);
-  if (idx < 0) return;
-  var newIdx = idx + direction;
-  if (newIdx < 0 || newIdx >= tasks.length) return;
-  var tmp = tasks[idx];
-  tasks[idx] = tasks[newIdx];
-  tasks[newIdx] = tmp;
-  renumberTasks();
-  saveTasks();
-  renderAll();
+// ===== DRAG AND DROP =====
+let dragSrcId = null;
+
+function setupDragAndDrop(tbody) {
+  const rows = tbody.querySelectorAll('tr[draggable="true"]');
+  rows.forEach(row => {
+    row.addEventListener('dragstart', (e) => {
+      // Only allow drag from the grip handle
+      if (!e.target.closest('.drag-handle')) {
+        e.preventDefault();
+        return;
+      }
+      dragSrcId = parseInt(row.dataset.id, 10);
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', row.dataset.id);
+    });
+
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      tbody.querySelectorAll('tr').forEach(r => {
+        r.classList.remove('drag-over-top', 'drag-over-bottom');
+      });
+      dragSrcId = null;
+    });
+
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const targetId = parseInt(row.dataset.id, 10);
+      if (targetId === dragSrcId) return;
+      // Determine if cursor is in top or bottom half of row
+      const rect = row.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      row.classList.remove('drag-over-top', 'drag-over-bottom');
+      if (e.clientY < midY) {
+        row.classList.add('drag-over-top');
+      } else {
+        row.classList.add('drag-over-bottom');
+      }
+    });
+
+    row.addEventListener('dragleave', () => {
+      row.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+
+    row.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const targetId = parseInt(row.dataset.id, 10);
+      if (dragSrcId === null || dragSrcId === targetId) return;
+      const srcIdx = tasks.findIndex(t => t.id === dragSrcId);
+      let targetIdx = tasks.findIndex(t => t.id === targetId);
+      if (srcIdx < 0 || targetIdx < 0) return;
+      // Determine drop position based on cursor
+      const rect = row.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      const dropAfter = e.clientY >= midY;
+      // Remove the dragged task
+      const [moved] = tasks.splice(srcIdx, 1);
+      // Recalculate target index after removal
+      targetIdx = tasks.findIndex(t => t.id === targetId);
+      const insertIdx = dropAfter ? targetIdx + 1 : targetIdx;
+      tasks.splice(insertIdx, 0, moved);
+      renumberTasks();
+      saveTasks();
+      renderAll();
+    });
+  });
+
+  // Touch support for mobile drag
+  let touchSrcId = null;
+  let touchClone = null;
+  let touchStartY = 0;
+
+  tbody.querySelectorAll('.drag-handle').forEach(handle => {
+    handle.addEventListener('touchstart', (e) => {
+      const row = handle.closest('tr');
+      touchSrcId = parseInt(row.dataset.id, 10);
+      touchStartY = e.touches[0].clientY;
+      row.classList.add('dragging');
+      e.preventDefault();
+    }, { passive: false });
+  });
+
+  document.addEventListener('touchmove', (e) => {
+    if (touchSrcId === null) return;
+    e.preventDefault();
+    const touchY = e.touches[0].clientY;
+    const el = document.elementFromPoint(e.touches[0].clientX, touchY);
+    tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over-top', 'drag-over-bottom'));
+    if (el) {
+      const overRow = el.closest('tr');
+      if (overRow && overRow.dataset.id && parseInt(overRow.dataset.id) !== touchSrcId) {
+        const rect = overRow.getBoundingClientRect();
+        if (touchY < rect.top + rect.height / 2) overRow.classList.add('drag-over-top');
+        else overRow.classList.add('drag-over-bottom');
+      }
+    }
+  }, { passive: false });
+
+  document.addEventListener('touchend', (e) => {
+    if (touchSrcId === null) return;
+    tbody.querySelectorAll('tr').forEach(r => r.classList.remove('dragging', 'drag-over-top', 'drag-over-bottom'));
+    const touch = e.changedTouches[0];
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (el) {
+      const overRow = el.closest('tr');
+      if (overRow && overRow.dataset.id) {
+        const targetId = parseInt(overRow.dataset.id, 10);
+        if (targetId !== touchSrcId) {
+          const srcIdx = tasks.findIndex(t => t.id === touchSrcId);
+          let targetIdx = tasks.findIndex(t => t.id === targetId);
+          if (srcIdx >= 0 && targetIdx >= 0) {
+            const rect = overRow.getBoundingClientRect();
+            const dropAfter = touch.clientY >= rect.top + rect.height / 2;
+            const [moved] = tasks.splice(srcIdx, 1);
+            targetIdx = tasks.findIndex(t => t.id === targetId);
+            tasks.splice(dropAfter ? targetIdx + 1 : targetIdx, 0, moved);
+            renumberTasks();
+            saveTasks();
+            renderAll();
+          }
+        }
+      }
+    }
+    touchSrcId = null;
+  });
 }
 
 // ===== RENUMBER =====
