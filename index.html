@@ -616,13 +616,25 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 .drag-handle {
   cursor: grab; display: inline-flex; align-items: center; justify-content: center;
   width: 28px; height: 28px; border-radius: 6px; border: none; background: transparent;
-  color: var(--color-text-muted); transition: all 0.15s;
+  color: var(--color-text-muted); transition: all 0.15s; -webkit-user-select: none; user-select: none;
 }
 .drag-handle:hover { background: var(--color-surface-offset); color: var(--color-text); }
 .drag-handle:active { cursor: grabbing; }
-tr.dragging { opacity: 0.4; background: var(--color-primary-light) !important; }
-tr.drag-over-top { box-shadow: inset 0 3px 0 0 var(--color-primary); }
-tr.drag-over-bottom { box-shadow: inset 0 -3px 0 0 var(--color-primary); }
+tr.dnd-dragging { opacity: 0.35; }
+tr.dnd-over { position: relative; }
+tr.dnd-over::after {
+  content: ''; position: absolute; left: 0; right: 0; height: 3px;
+  background: var(--color-primary); pointer-events: none; z-index: 10;
+}
+tr.dnd-over-top::after { top: -2px; }
+tr.dnd-over-bottom::after { bottom: -2px; }
+.dnd-ghost {
+  position: fixed; pointer-events: none; z-index: 9999;
+  background: var(--color-surface); border: 2px solid var(--color-primary);
+  border-radius: 8px; padding: 10px 16px; font-size: 14px; font-weight: 600;
+  color: var(--color-text); box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis;
+}
 .row-action-btn {
   display: inline-flex;
   align-items: center;
@@ -1523,7 +1535,7 @@ function renderChecklist() {
 
     var showReorder = (activeFilter === 'all');
 
-    return '<tr data-id="' + t.id + '"' + (showReorder ? ' draggable="true"' : '') + '>' +
+    return '<tr data-id="' + t.id + '">' +
       '<td class="col-status"><span class="status-dot ' + t.status + '" title="' + t.status + '"></span></td>' +
       '<td class="col-id"><span class="task-id">' + (idx + 1) + '</span></td>' +
       '<td class="col-category"><span class="category-badge ' + catClass + '">' + t.category + '</span></td>' +
@@ -1560,132 +1572,138 @@ function renderChecklist() {
   setupDragAndDrop(tbody);
 }
 
-// ===== DRAG AND DROP =====
-let dragSrcId = null;
+// ===== DRAG AND DROP (custom mouse/touch) =====
+var dnd = { active: false, srcId: null, srcRow: null, ghost: null, tbody: null };
 
 function setupDragAndDrop(tbody) {
-  const rows = tbody.querySelectorAll('tr[draggable="true"]');
-  rows.forEach(row => {
-    row.addEventListener('dragstart', (e) => {
-      // Only allow drag from the grip handle
-      if (!e.target.closest('.drag-handle')) {
-        e.preventDefault();
-        return;
-      }
-      dragSrcId = parseInt(row.dataset.id, 10);
-      row.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', row.dataset.id);
-    });
+  dnd.tbody = tbody;
 
-    row.addEventListener('dragend', () => {
-      row.classList.remove('dragging');
-      tbody.querySelectorAll('tr').forEach(r => {
-        r.classList.remove('drag-over-top', 'drag-over-bottom');
-      });
-      dragSrcId = null;
-    });
-
-    row.addEventListener('dragover', (e) => {
+  tbody.querySelectorAll('.drag-handle').forEach(function(handle) {
+    // Mouse events
+    handle.addEventListener('mousedown', function(e) {
       e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      const targetId = parseInt(row.dataset.id, 10);
-      if (targetId === dragSrcId) return;
-      // Determine if cursor is in top or bottom half of row
-      const rect = row.getBoundingClientRect();
-      const midY = rect.top + rect.height / 2;
-      row.classList.remove('drag-over-top', 'drag-over-bottom');
-      if (e.clientY < midY) {
-        row.classList.add('drag-over-top');
-      } else {
-        row.classList.add('drag-over-bottom');
-      }
+      e.stopPropagation();
+      dndStart(handle.closest('tr'), e.clientX, e.clientY);
     });
-
-    row.addEventListener('dragleave', () => {
-      row.classList.remove('drag-over-top', 'drag-over-bottom');
-    });
-
-    row.addEventListener('drop', (e) => {
+    // Touch events
+    handle.addEventListener('touchstart', function(e) {
       e.preventDefault();
-      const targetId = parseInt(row.dataset.id, 10);
-      if (dragSrcId === null || dragSrcId === targetId) return;
-      const srcIdx = tasks.findIndex(t => t.id === dragSrcId);
-      let targetIdx = tasks.findIndex(t => t.id === targetId);
-      if (srcIdx < 0 || targetIdx < 0) return;
-      // Determine drop position based on cursor
-      const rect = row.getBoundingClientRect();
-      const midY = rect.top + rect.height / 2;
-      const dropAfter = e.clientY >= midY;
-      // Remove the dragged task
-      const [moved] = tasks.splice(srcIdx, 1);
-      // Recalculate target index after removal
-      targetIdx = tasks.findIndex(t => t.id === targetId);
-      const insertIdx = dropAfter ? targetIdx + 1 : targetIdx;
-      tasks.splice(insertIdx, 0, moved);
-      renumberTasks();
-      saveTasks();
-      renderAll();
-    });
-  });
-
-  // Touch support for mobile drag
-  let touchSrcId = null;
-  let touchClone = null;
-  let touchStartY = 0;
-
-  tbody.querySelectorAll('.drag-handle').forEach(handle => {
-    handle.addEventListener('touchstart', (e) => {
-      const row = handle.closest('tr');
-      touchSrcId = parseInt(row.dataset.id, 10);
-      touchStartY = e.touches[0].clientY;
-      row.classList.add('dragging');
-      e.preventDefault();
+      e.stopPropagation();
+      var t = e.touches[0];
+      dndStart(handle.closest('tr'), t.clientX, t.clientY);
     }, { passive: false });
   });
+}
 
-  document.addEventListener('touchmove', (e) => {
-    if (touchSrcId === null) return;
-    e.preventDefault();
-    const touchY = e.touches[0].clientY;
-    const el = document.elementFromPoint(e.touches[0].clientX, touchY);
-    tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over-top', 'drag-over-bottom'));
-    if (el) {
-      const overRow = el.closest('tr');
-      if (overRow && overRow.dataset.id && parseInt(overRow.dataset.id) !== touchSrcId) {
-        const rect = overRow.getBoundingClientRect();
-        if (touchY < rect.top + rect.height / 2) overRow.classList.add('drag-over-top');
-        else overRow.classList.add('drag-over-bottom');
-      }
-    }
-  }, { passive: false });
+function dndStart(row, x, y) {
+  dnd.active = true;
+  dnd.srcId = parseInt(row.dataset.id, 10);
+  dnd.srcRow = row;
+  row.classList.add('dnd-dragging');
 
-  document.addEventListener('touchend', (e) => {
-    if (touchSrcId === null) return;
-    tbody.querySelectorAll('tr').forEach(r => r.classList.remove('dragging', 'drag-over-top', 'drag-over-bottom'));
-    const touch = e.changedTouches[0];
-    const el = document.elementFromPoint(touch.clientX, touch.clientY);
-    if (el) {
-      const overRow = el.closest('tr');
-      if (overRow && overRow.dataset.id) {
-        const targetId = parseInt(overRow.dataset.id, 10);
-        if (targetId !== touchSrcId) {
-          const srcIdx = tasks.findIndex(t => t.id === touchSrcId);
-          let targetIdx = tasks.findIndex(t => t.id === targetId);
-          if (srcIdx >= 0 && targetIdx >= 0) {
-            const rect = overRow.getBoundingClientRect();
-            const dropAfter = touch.clientY >= rect.top + rect.height / 2;
-            const [moved] = tasks.splice(srcIdx, 1);
-            targetIdx = tasks.findIndex(t => t.id === targetId);
-            tasks.splice(dropAfter ? targetIdx + 1 : targetIdx, 0, moved);
-            renumberTasks();
-            saveTasks();
-            renderAll();
-          }
+  // Create floating ghost
+  var taskName = row.querySelector('.task-name');
+  var ghost = document.createElement('div');
+  ghost.className = 'dnd-ghost';
+  ghost.textContent = taskName ? taskName.textContent : 'Task';
+  ghost.style.left = x + 12 + 'px';
+  ghost.style.top = y - 16 + 'px';
+  document.body.appendChild(ghost);
+  dnd.ghost = ghost;
+
+  document.addEventListener('mousemove', dndMove);
+  document.addEventListener('mouseup', dndEnd);
+  document.addEventListener('touchmove', dndMoveTouch, { passive: false });
+  document.addEventListener('touchend', dndEndTouch);
+  document.addEventListener('touchcancel', dndEndTouch);
+}
+
+function dndMove(e) {
+  if (!dnd.active) return;
+  dndUpdate(e.clientX, e.clientY);
+}
+
+function dndMoveTouch(e) {
+  if (!dnd.active) return;
+  e.preventDefault();
+  var t = e.touches[0];
+  dndUpdate(t.clientX, t.clientY);
+}
+
+function dndUpdate(x, y) {
+  // Move ghost
+  if (dnd.ghost) {
+    dnd.ghost.style.left = x + 12 + 'px';
+    dnd.ghost.style.top = y - 16 + 'px';
+  }
+  // Highlight target row
+  dndClearHighlights();
+  var el = document.elementFromPoint(x, y);
+  if (!el) return;
+  var overRow = el.closest('tr');
+  if (!overRow || !overRow.dataset.id) return;
+  var overId = parseInt(overRow.dataset.id, 10);
+  if (overId === dnd.srcId) return;
+  var rect = overRow.getBoundingClientRect();
+  var isTop = y < rect.top + rect.height / 2;
+  overRow.classList.add('dnd-over');
+  overRow.classList.add(isTop ? 'dnd-over-top' : 'dnd-over-bottom');
+}
+
+function dndEnd(e) {
+  if (!dnd.active) return;
+  dndFinish(e.clientX, e.clientY);
+}
+
+function dndEndTouch(e) {
+  if (!dnd.active) return;
+  var t = e.changedTouches[0];
+  dndFinish(t.clientX, t.clientY);
+}
+
+function dndFinish(x, y) {
+  // Find drop target BEFORE removing ghost
+  var el = document.elementFromPoint(x, y);
+  dndClearHighlights();
+  if (dnd.ghost) { dnd.ghost.remove(); dnd.ghost = null; }
+  if (dnd.srcRow) dnd.srcRow.classList.remove('dnd-dragging');
+  if (el) {
+    var overRow = el.closest('tr');
+    if (overRow && overRow.dataset.id) {
+      var targetId = parseInt(overRow.dataset.id, 10);
+      if (targetId !== dnd.srcId) {
+        var srcIdx = tasks.findIndex(function(t) { return t.id === dnd.srcId; });
+        var targetIdx = tasks.findIndex(function(t) { return t.id === targetId; });
+        if (srcIdx >= 0 && targetIdx >= 0) {
+          var rect = overRow.getBoundingClientRect();
+          var dropAfter = y >= rect.top + rect.height / 2;
+          var moved = tasks.splice(srcIdx, 1)[0];
+          targetIdx = tasks.findIndex(function(t) { return t.id === targetId; });
+          var insertAt = dropAfter ? targetIdx + 1 : targetIdx;
+          tasks.splice(insertAt, 0, moved);
+          renumberTasks();
+          saveTasks();
+          renderAll();
         }
       }
     }
-    touchSrcId = null;
+  }
+
+  // Cleanup
+  document.removeEventListener('mousemove', dndMove);
+  document.removeEventListener('mouseup', dndEnd);
+  document.removeEventListener('touchmove', dndMoveTouch);
+  document.removeEventListener('touchend', dndEndTouch);
+  document.removeEventListener('touchcancel', dndEndTouch);
+  dnd.active = false;
+  dnd.srcId = null;
+  dnd.srcRow = null;
+}
+
+function dndClearHighlights() {
+  if (!dnd.tbody) return;
+  dnd.tbody.querySelectorAll('tr').forEach(function(r) {
+    r.classList.remove('dnd-over', 'dnd-over-top', 'dnd-over-bottom');
   });
 }
 
